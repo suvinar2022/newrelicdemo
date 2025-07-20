@@ -1,0 +1,36 @@
+name: "New Relic Deployment Marker"
+description: "Reusable pipeline extension to send deployment markers to 
+New Relic"
+author: "Your Team"
+inputs:
+  api_key:
+    description: "New Relic API Key"
+    required: true
+  app_id:
+    description: "New Relic Application ID"
+    required: true
+  revision:
+    description: "Git SHA or version identifier"
+    required: true
+  user:
+    description: "Username or actor triggering the deployment"
+    required: true
+  description:
+    description: "Deployment description"
+    required: false
+    default: "GitHub Actions Deployment"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Send deployment marker to New Relic
+      shell: bash
+      run: |
+        chmod +x ${{ github.action_path }}/entrypoint.sh
+        ${{ github.action_path }}/entrypoint.sh \
+          "${{ inputs.api_key }}" \
+          "${{ inputs.app_id }}" \
+          "${{ inputs.revision }}" \
+          "${{ inputs.user }}" \
+          "${{ inputs.description }}"
+

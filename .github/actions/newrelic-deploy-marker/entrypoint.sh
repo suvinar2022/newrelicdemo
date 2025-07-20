@@ -21,7 +21,7 @@ fi
 
 # ✅ Correct curl syntax
 curl -X POST "https://api.newrelic.com/v2/applications/${NEW_RELIC_APP_ID}/deployments.json" \
-  -H "Api-Key: ${NEW_RELIC_API_KEY}" \
+  -H "Api-Key:${NEW_RELIC_API_KEY}" \
   -H "Content-Type: application/json" \
   -d "{
         \"deployment\": {

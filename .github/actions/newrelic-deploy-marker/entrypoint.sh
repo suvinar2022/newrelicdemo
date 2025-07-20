@@ -20,8 +20,8 @@ if [ -z "$NEW_RELIC_API_KEY" ] || [ -z "$NEW_RELIC_APP_ID" ]; then
 fi
 
 # ✅ Correct curl syntax
-curl -X POST "https://api.newrelic.com/v2/applications/${NEW_RELIC_APP_ID}/deployments.json" \
-  -H "Api-Key:${NEW_RELIC_API_KEY}" \
+curl -X POST "https://api.newrelic.com/v2/applications/${{ secrets.NEW_RELIC_APP_ID }}/deployments.json" \
+  -H "Api-Key:${{ secrets.NEW_RELIC_API_KEY }}" \
   -H "Content-Type: application/json" \
   -d "{
         \"deployment\": {

@@ -1,7 +1,7 @@
 name: "New Relic Deployment Marker"
-description: "Reusable pipeline extension to send deployment markers to 
-New Relic"
+description: "Reusable pipeline extension to send deployment markers to New Relic"
 author: "Your Team"
+
 inputs:
   api_key:
     description: "New Relic API Key"
@@ -33,4 +33,3 @@ runs:
           "${{ inputs.revision }}" \
           "${{ inputs.user }}" \
           "${{ inputs.description }}"
-

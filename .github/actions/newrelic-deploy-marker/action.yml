@@ -1,19 +1,19 @@
 name: "New Relic Deployment Marker"
-description: "Reusable pipeline extension to send deployment markers to New Relic"
+description: "Send deployment marker to New Relic via NerdGraph"
 author: "Your Team"
 
 inputs:
   api_key:
-    description: "New Relic API Key"
+    description: "New Relic User API Key (not ingest key)"
     required: true
   app_id:
-    description: "New Relic Application ID"
+    description: "New Relic Entity GUID"
     required: true
   revision:
     description: "Git SHA or version identifier"
     required: true
   user:
-    description: "Username or actor triggering the deployment"
+    description: "User or actor triggering the deployment"
     required: true
   description:
     description: "Deployment description"
@@ -26,10 +26,9 @@ runs:
     - name: Send deployment marker to New Relic
       shell: bash
       run: |
-        chmod +x ${{ github.action_path }}/entrypoint.sh
-        ${{ github.action_path }}/entrypoint.sh \
-          "${{ inputs.api_key }}" \
-          "${{ inputs.app_id }}" \
-          "${{ inputs.revision }}" \
-          "${{ inputs.user }}" \
-          "${{ inputs.description }}"
+        curl -X POST https://api.newrelic.com/graphql \
+          -H "Content-Type: application/json" \
+          -H "API-Key: ${{ inputs.api_key }}" \
+          -d '{
+            "query": "mutation { changeTrackingCreateDeployment(deployment: {version: \"${{ inputs.revision }}\", entityGuid: \"${{ inputs.app_id }}\", description: \"${{ inputs.description }}\", user: \"${{ inputs.user }}\"}) { deploymentId } }"
+          }'

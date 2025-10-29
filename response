@@ -1,0 +1,172 @@
+# Why New Relic Service Maps Are Not Appearing
+
+This section explains **why service maps are not showing up in New Relic (NR)** when using OpenTelemetry (OTEL) instrumentation and how to fix it.
+
+---
+
+## 🚨 Problem
+New Relic builds **service maps** exclusively from **distributed traces**, not from Prometheus metrics. In your current configuration, only metrics are flowing into NR — there’s no **traces pipeline** defined in your Collector setup.
+
+As a result, NR can display metric dashboards but cannot construct the service dependency graph.
+
+---
+
+## 🧩 Root Cause
+- The OTEL Collector configuration (`values.yaml`) defines a **Prometheus receiver** for Kong/Kuma metrics but **no OTLP receiver** and **no `traces` pipeline** to New Relic.
+- Only metrics → NR = ✅
+- No traces → No service map ❌
+
+---
+
+## ✅ Fix Steps
+
+### 1. Enable tracing in Kong and services
+Make sure **Kong** and your downstream applications emit traces.
+
+#### Kong OpenTelemetry plugin
+```bash
+otel_endpoint = otel-collector.observability.svc.cluster.local:4317
+otel_service_name = kong-proxy
+```
+
+#### Applications
+Use OTEL SDK or auto-instrumentation to send traces to the same endpoint:
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
+OTEL_SERVICE_NAME=my-service
+```
+Ensure HTTP trace propagation headers (`traceparent`, `tracestate`) are forwarded.
+
+---
+
+### 2. Add OTLP receiver and trace pipeline in OTEL Collector
+Append the following to your **Collector config**:
+
+```yaml
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc: {}
+        http: {}
+
+  processors:
+    k8sattributes:
+      auth_type: serviceAccount
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.pod.name
+          - k8s.deployment.name
+          - k8s.container.name
+    resource:
+      attributes:
+        - key: deployment.environment
+          value: dev
+          action: upsert
+        - key: k8s.cluster.name
+          value: eks-nsk
+          action: upsert
+    batch: {}
+    memory_limiter:
+      check_interval: 2s
+      limit_mib: 400
+
+  exporters:
+    otlphttp/newrelic:
+      endpoint: https://otlp.nr-data.net:4318
+      headers:
+        api-key: ${NEW_RELIC_LICENSE_KEY}
+
+  service:
+    pipelines:
+      metrics:
+        receivers: [prometheus, otlp]
+        processors: [k8sattributes, resource, batch]
+        exporters: [otlphttp/newrelic]
+      traces:
+        receivers: [otlp]
+        processors: [k8sattributes, resource, batch]
+        exporters: [otlphttp/newrelic]
+```
+
+---
+
+### 3. Normalize resource attributes
+Each service should emit these attributes:
+- `service.name` — stable per workload
+- `deployment.environment` — dev/stage/prod
+- `service.instance.id` — unique per instance
+
+This ensures NR groups spans correctly into nodes.
+
+---
+
+### 4. Ensure spans describe relationships
+- Inbound requests → `span.kind = server`
+- Outbound calls → `span.kind = client`
+- Include standard HTTP attributes (`http.method`, `http.target`, `net.peer.name`, etc.)
+
+These attributes allow NR to detect edges between services.
+
+---
+
+## 🔍 Validate in New Relic
+Run the following NRQL queries to confirm spans are flowing:
+
+**Check span ingestion:**
+```sql
+SELECT count(*) FROM Span SINCE 30 minutes ago
+```
+
+**Confirm Kong proxy presence:**
+```sql
+SELECT uniqueCount(service.name) FROM Span WHERE service.name = 'kong-proxy' SINCE 30 minutes ago
+```
+
+**Inspect edges (client → server):**
+```sql
+SELECT count(*) FROM Span 
+WHERE span.kind = 'client' AND service.name = 'kong-proxy'
+SINCE 30 minutes ago
+```
+
+If counts are `0`, traces are still not flowing.
+
+---
+
+## ⚠️ Common Issues
+| Issue | Description | Fix |
+|--------|--------------|-----|
+| No OTLP receiver | Traces never reach collector | Add `otlp` receiver block |
+| Wrong port | Kong plugin pointed to wrong port (4317 vs 4318) | Match Collector config |
+| Sampling | Too aggressive | Start with 100% sampling |
+| Header loss | Trace context stripped | Ensure `traceparent` forwarded |
+| Metrics only | NR Prometheus agent installed, no traces | Use OTEL pipeline for spans |
+| Dynamic service names | `service.name` includes pod hash | Use stable names |
+
+---
+
+## 🗺️ Service Map Generation Details
+New Relic’s **APM Service Map** is automatically built from span data if:
+- Spans contain `span.kind` and `service.name`.
+- There are both `client` and `server` spans that connect across services.
+- Traces have been received for at least a few minutes.
+
+If spans appear in NR but no map shows:
+- Verify spans have proper `span.kind` values.
+- Confirm consistent `service.name` usage.
+- Wait a few minutes for NR to compute relationships.
+
+---
+
+## ✅ Summary
+| Step | Action |
+|------|---------|
+| 1 | Enable tracing in Kong and apps |
+| 2 | Add OTLP receiver and traces pipeline in Collector |
+| 3 | Verify spans have correct attributes |
+| 4 | Check NRQL queries for span ingestion |
+| 5 | Confirm service map appears automatically |
+
+Once spans flow through OTEL → NR, service maps will populate within minutes.
